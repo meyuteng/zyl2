@@ -6,7 +6,7 @@
 #
 # 用法：
 #   bash install.sh
-#   curl -fsSL <你的仓库地址>/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/meyuteng/zyl2/main/install.sh | bash
 #
 # 可用环境变量覆盖默认值：
 #   L2TP_USER=foo L2TP_PASS=bar bash install.sh
@@ -17,9 +17,9 @@
 set -euo pipefail
 
 # ============================ 可配置项 ============================
-# 预编译包所在仓库。你 push 到 GitHub 后把下面两行改成自己的。
-GITHUB_USER="${GITHUB_USER:-YOUR_GITHUB_USER}"
-GITHUB_REPO="${GITHUB_REPO:-YOUR_GITHUB_REPO}"
+# 预编译包所在仓库。fork / 换仓库时改这两行（或用环境变量覆盖）。
+GITHUB_USER="${GITHUB_USER:-meyuteng}"
+GITHUB_REPO="${GITHUB_REPO:-zyl2}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 
 # 也可以直接指定一个基址，覆盖上面的拼装结果

@@ -11,14 +11,14 @@ xl2tpd 的数据面在用户态：pppd 挂在 pty 上，每个包要在用户态
 ## 一键安装
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/<你的用户名>/<仓库名>/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/meyuteng/zyl2/main/install.sh | bash
 ```
 
 或者克隆下来再跑：
 
 ```bash
-git clone https://github.com/<你的用户名>/<仓库名>.git
-cd <仓库名>
+git clone https://github.com/meyuteng/zyl2.git
+cd zyl2
 sudo bash install.sh
 ```
 
@@ -54,11 +54,11 @@ sudo L2TP_USER=myuser L2TP_PASS='强口令' bash install.sh
 | `ALLOW_ALL` | `1` | `0` 时改用 `CLIENT_ALLOW` 做白名单 |
 | `CLIENT_ALLOW` | `0.0.0.0/0` | `ALLOW_ALL=0` 时生效，如 `1.2.3.0/24` |
 | `REPO_RAW` | 自动拼装 | 预编译包的下载基址 |
-| `GITHUB_USER` / `GITHUB_REPO` | 需修改 | 你 fork/上传后的仓库 |
+| `GITHUB_USER` / `GITHUB_REPO` | `meyuteng` / `zyl2` | 预编译包的来源仓库 |
 
-> `install.sh` 顶部的 `GITHUB_USER` / `GITHUB_REPO` 是占位符，
-> **上传到自己的 GitHub 后记得改成实际值**，否则预编译包下载会失败
-> （会退化成源码编译，仍然能装成功）。
+> 如果你 fork 到别的仓库，改 `install.sh` 顶部的 `GITHUB_USER` / `GITHUB_REPO`，
+> 或直接用 `REPO_RAW=<基址>` 覆盖。填错不会装坏，只是预编译包下载失败、
+> 自动退化成源码编译（仍然能装成功）。
 
 ## 客户端怎么连
 
