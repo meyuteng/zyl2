@@ -80,17 +80,24 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq </dev/null
 
 # iptables 在新版 Ubuntu 最小化镜像里不一定预装
-# linux-modules-extra 提供内核 L2TP 模块（l2tp_netlink / l2tp_ppp），
-#   有了它 accel-ppp 才能把数据面交给内核，没有则退回用户态（能跑但更费 CPU）
+# 内核 L2TP 模块（l2tp_netlink / l2tp_ppp）在时，accel-ppp 才能把数据面交给内核；
+#   没有则退回用户态（能跑但更费 CPU）
 apt-get install -y -qq --no-install-recommends \
     iptables iproute2 curl ca-certificates kmod procps </dev/null || true
 
+# 这些内核模块在 Ubuntu 24.04 及更早由 linux-modules-extra-<ver> 提供，
+#   但 26.04 起 modules-extra 已并入 linux-modules，该包名不复存在。
+#   所以判据必须是「模块在不在」，不能拿 apt 的退出码当结论，
+#   否则 26.04 上必然失败并打印一条不成立的「将退回用户态」警告。
 KREL="$(uname -r)"
-if apt-get install -y -qq --no-install-recommends "linux-modules-extra-${KREL}" </dev/null 2>/dev/null; then
+if modinfo l2tp_ppp >/dev/null 2>&1; then
+    ok "内核 L2TP 模块已就位（$(modinfo -n l2tp_ppp 2>/dev/null)）"
+elif apt-get install -y -qq --no-install-recommends "linux-modules-extra-${KREL}" </dev/null 2>/dev/null \
+     && modinfo l2tp_ppp >/dev/null 2>&1; then
     ok "内核模块包装好了（linux-modules-extra-${KREL}）"
 else
-    warn "装不上 linux-modules-extra-${KREL}（自定义内核？）"
-    warn "accel-ppp 将退回用户态 L2TP，能正常用，但 CPU 占用会高一些"
+    warn "内核 L2TP 模块不可用（${KREL}），accel-ppp 将使用用户态 L2TP"
+    warn "能正常用，但 CPU 占用会更高；自定义内核请自行提供 l2tp_ppp"
 fi
 ok "依赖就绪"
 
