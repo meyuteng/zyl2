@@ -352,8 +352,8 @@ Wants=network-online.target
 
 [Service]
 Type=forking
-ExecStart=/usr/sbin/accel-pppd -d -p /var/run/accel-pppd.pid -c /etc/accel-ppp.conf
-PIDFile=/var/run/accel-pppd.pid
+ExecStart=/usr/sbin/accel-pppd -d -p /run/accel-pppd.pid -c /etc/accel-ppp.conf
+PIDFile=/run/accel-pppd.pid
 ExecReload=/bin/kill -SIGUSR1 $MAINPID
 Restart=on-failure
 RestartSec=3
