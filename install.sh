@@ -80,15 +80,18 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq </dev/null
 
 # iptables 在新版 Ubuntu 最小化镜像里不一定预装
-# 内核 L2TP 模块（l2tp_netlink / l2tp_ppp）在时，accel-ppp 才能把数据面交给内核；
-#   没有则退回用户态（能跑但更费 CPU）
 apt-get install -y -qq --no-install-recommends \
     iptables iproute2 curl ca-certificates kmod procps </dev/null || true
 
-# 这些内核模块在 Ubuntu 24.04 及更早由 linux-modules-extra-<ver> 提供，
-#   但 26.04 起 modules-extra 已并入 linux-modules，该包名不复存在。
-#   所以判据必须是「模块在不在」，不能拿 apt 的退出码当结论，
-#   否则 26.04 上必然失败并打印一条不成立的「将退回用户态」警告。
+# 内核 l2tp_ppp 是硬性前置条件，不是「有更好、没有也能跑」的调优项：
+#   accel-ppp 的每个 tunnel 和 session 都建立在
+#   socket(AF_PPPOX, SOCK_DGRAM, PX_PROTO_OL2TP) 之上（见上游 l2tp.c），
+#   没有用户态替代路径。模块缺席时服务照样能起、1701 也能听，
+#   但任何客户端都建不起会话——所以这里必须 fail fast。
+#
+# 模块位置随版本变：24.04 及更早在 linux-modules-extra-<ver>，
+#   26.04 起 modules-extra 已并入 linux-modules，该包名不复存在。
+#   因此判据是「模块在不在」，不能拿 apt 的退出码当结论。
 KREL="$(uname -r)"
 if modinfo l2tp_ppp >/dev/null 2>&1; then
     ok "内核 L2TP 模块已就位（$(modinfo -n l2tp_ppp 2>/dev/null)）"
@@ -96,8 +99,10 @@ elif apt-get install -y -qq --no-install-recommends "linux-modules-extra-${KREL}
      && modinfo l2tp_ppp >/dev/null 2>&1; then
     ok "内核模块包装好了（linux-modules-extra-${KREL}）"
 else
-    warn "内核 L2TP 模块不可用（${KREL}），accel-ppp 将使用用户态 L2TP"
-    warn "能正常用，但 CPU 占用会更高；自定义内核请自行提供 l2tp_ppp"
+    die "缺少内核 L2TP 模块 l2tp_ppp（当前内核 ${KREL}），accel-ppp 的 L2TP 无法工作。
+     常见原因：自定义内核没编 l2tp_ppp，或该内核的 modules 包未安装。
+     先手动确认：modprobe l2tp_ppp && lsmod | grep l2tp_ppp
+     模块可用之后再重跑本脚本。"
 fi
 ok "依赖就绪"
 
@@ -229,7 +234,8 @@ EOF
 if lsmod | grep -q '^l2tp_ppp'; then
     ok "内核 L2TP 已启用（数据面走内核，CPU 占用最低）"
 else
-    warn "内核 L2TP 未加载，accel-ppp 将使用用户态 L2TP"
+    die "l2tp_ppp 的模块文件在，但加载失败——accel-ppp 的 L2TP 将无法建立任何会话。
+     查看原因：modprobe l2tp_ppp; dmesg | tail -20"
 fi
 
 # ============================ 配置文件 ============================
