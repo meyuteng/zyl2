@@ -69,7 +69,10 @@ ARCH="$(uname -m)"
 
 # 从 VERSION_ID 取主版本号（如 20.04 -> 20）
 VER_MAJOR="${DISTRO_VER%%.*}"
-glibc_ver="$(ldd --version 2>/dev/null | head -1 | grep -oE '[0-9]+\.[0-9]+$' || echo 0)"
+# 用 awk 而不是 `head -1 | grep`：head 提前关管道会让 ldd 收到 SIGPIPE(141)，
+# 而 set -o pipefail 下整条管道因此返回非零，`|| echo 0` 就会被误触发，
+# 变量里变成 "2.41\n0"（实测约三成概率复现）。awk 读完全部输入，没有这个问题。
+glibc_ver="$(ldd --version 2>/dev/null | awk 'NR==1{print $NF}')"
 ok "系统 ${PRETTY_NAME:-$DISTRO_ID} / ${ARCH} / glibc ${glibc_ver}"
 
 # ============================ 安装依赖 ============================
@@ -100,8 +103,14 @@ elif apt-get install -y -qq --no-install-recommends "linux-modules-extra-${KREL}
     ok "内核模块包装好了（linux-modules-extra-${KREL}）"
 else
     die "缺少内核 L2TP 模块 l2tp_ppp（当前内核 ${KREL}），accel-ppp 的 L2TP 无法工作。
-     常见原因：自定义内核没编 l2tp_ppp，或该内核的 modules 包未安装。
-     先手动确认：modprobe l2tp_ppp && lsmod | grep l2tp_ppp
+
+     第 1 步，先排除容器：systemd-detect-virt 若输出 docker/podman/lxc，
+       说明这是容器——它和宿主共享内核、无权加载模块，通常也不挂载
+       /lib/modules。L2TP 服务端在容器里跑不起来，请换 KVM/VPS。
+
+     第 2 步，裸机/虚机上手动确认：modprobe l2tp_ppp && lsmod | grep l2tp_ppp
+       加载不了多半是自定义内核没编 l2tp_ppp，或该内核的 modules 包未装。
+
      模块可用之后再重跑本脚本。"
 fi
 ok "依赖就绪"
@@ -221,7 +230,9 @@ if [ "$USED_PREBUILT" -eq 0 ]; then
 fi
 
 [ -x /usr/sbin/accel-pppd ] || die "accel-pppd 未安装成功"
-ok "accel-pppd 就位：$(/usr/sbin/accel-pppd 2>&1 | head -1 || echo '')"
+# accel-pppd 无参数时会打印用法并以 1 退出。别写成 `| head -1 || echo ''`：
+# 那个 echo 每次都会触发，把一个空行也拼进消息里（实测 10/10 复现）。
+ok "accel-pppd 就位：$(/usr/sbin/accel-pppd 2>&1 | awk 'NR==1' || true)"
 
 # ============================ 内核模块 ============================
 log "加载内核 L2TP 模块"
