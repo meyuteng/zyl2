@@ -462,8 +462,11 @@ WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable -q l2tp-firewall.service
-/usr/local/sbin/l2tp-firewall.sh
+# 必须 start 而不是只 enable：只 enable 的话单元停在 inactive，
+# 规则虽然被下面的脚本直接跑上了、功能正常，但 systemd 状态和实际不一致
+# （is-active 显示 inactive），要等重启才自洽。实测两台机器都中招。
+systemctl enable -q --now l2tp-firewall.service \
+    || { warn "l2tp-firewall.service 启动失败，改为直接执行脚本"; /usr/local/sbin/l2tp-firewall.sh; }
 ok "NAT 规则已生效（出口网卡 ${DEF_IF}，网段 ${NET}）"
 
 # ufw 若开着，单独放行一下
