@@ -81,7 +81,12 @@ log "安装运行时依赖"
 export DEBIAN_FRONTEND=noninteractive
 # </dev/null：本脚本常用 `curl ... | bash` 方式运行，此时 stdin 就是脚本自身。
 # apt/dpkg 若从 stdin 读数据会把后面的脚本吃掉，导致执行到一半断掉。
-apt-get update -qq </dev/null
+#
+# 这里必须容忍失败：发行版 EOL 后软件源会被移走，apt-get update 返回 100
+# （报 "no longer has a Release file"）。在 set -e 下那会直接中断整个脚本，
+# 而且 -qq 把原因也吞了，用户只看到装到一半没了。依赖多半已经装好，
+# 所以失败只警告，继续往下走，真缺什么后面自有更明确的报错。
+apt-get update -qq </dev/null || warn "apt 源不可用（发行版 EOL 或镜像失效），跳过更新继续"
 
 # iptables 在新版 Ubuntu 最小化镜像里不一定预装
 apt-get install -y -qq --no-install-recommends \
@@ -111,6 +116,12 @@ else
 
      第 2 步，裸机/虚机上手动确认：modprobe l2tp_ppp && lsmod | grep l2tp_ppp
        加载不了多半是自定义内核没编 l2tp_ppp，或该内核的 modules 包未装。
+
+     第 3 步，若上面提示 apt 源不可用：那是发行版已 EOL，源被挪去了
+       old-releases.ubuntu.com，apt 装不上任何东西，模块包自然也装不上。
+       而归档里未必留着你当前内核那一版的 modules-extra（实测 groovy 的
+       linux-modules-extra-5.8.0-1024-aws 就查无此包）。出路是升级到受支持
+       的发行版，或手动取匹配内核版本的包。
 
      模块可用之后再重跑本脚本。"
 fi
