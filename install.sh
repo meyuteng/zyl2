@@ -88,9 +88,16 @@ export DEBIAN_FRONTEND=noninteractive
 # 所以失败只警告，继续往下走，真缺什么后面自有更明确的报错。
 apt-get update -qq </dev/null || warn "apt 源不可用（发行版 EOL 或镜像失效），跳过更新继续"
 
-# iptables 在新版 Ubuntu 最小化镜像里不一定预装
+# iptables 在新版 Ubuntu 最小化镜像里不一定预装。
+#
+# libpcre2-8-0 是给下面的预编译包探测用的：18.04 只带 pcre3 不带 pcre2，
+#   缺了它 accel-pppd 会以 "libpcre2-8.so.0: cannot open shared object file"
+#   启动失败，脚本就误判成「预编译包不兼容」退回源码编译——实测那台 18.04
+#   为此白编译了几分钟。补上这个包，预编译包在 18.04 上直接就能跑：
+#   glibc 用的是版本化符号，只要求「实际引用到的那几个符号」存在，
+#   并不要求运行机的 glibc 版本号 ≥ 构建机的。
 apt-get install -y -qq --no-install-recommends \
-    iptables iproute2 curl ca-certificates kmod procps </dev/null || true
+    iptables iproute2 curl ca-certificates kmod procps libpcre2-8-0 </dev/null || true
 
 # 内核 l2tp_ppp 是硬性前置条件，不是「有更好、没有也能跑」的调优项：
 #   accel-ppp 的每个 tunnel 和 session 都建立在
@@ -224,7 +231,9 @@ install_prebuilt() {
 }
 
 probe_binary() {
-    # 真正跑一次，确认二进制在这台机器上能用（能捕获 glibc 版本不匹配）
+    # 真正跑一次，确认二进制在这台机器上能用。
+    # 能捕获的情况：缺动态库（如 18.04 缺 libpcre2-8.so.0）、glibc 符号版本不足、
+    # 架构不符等——都表现为启动即失败，比事后靠字符串比对靠谱。
     local p=$((L2TP_PORT + 10000))
     cat > /tmp/accel-probe.conf <<EOF
 [modules]
@@ -291,7 +300,7 @@ if install_prebuilt; then
         USED_PREBUILT=1
         ok "预编译包可用"
     else
-        warn "预编译包在本机跑不起来（多半是 glibc 太旧）"
+        warn "预编译包在本机跑不起来（常见原因：缺 libpcre2-8.so.0 等动态库，或 glibc 符号版本不足）"
         cat /tmp/accel-probe.err 2>/dev/null | head -3 | sed 's/^/    /' || true
         cleanup_partial
     fi
