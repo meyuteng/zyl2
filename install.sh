@@ -6,6 +6,7 @@
 #
 # 用法：
 #   bash install.sh
+#   wget -q https://raw.githubusercontent.com/meyuteng/zyl2/main/install.sh -O /tmp/install.sh && sudo bash /tmp/install.sh
 #   curl -fsSL https://raw.githubusercontent.com/meyuteng/zyl2/main/install.sh | bash
 #
 # 可用环境变量覆盖默认值：
