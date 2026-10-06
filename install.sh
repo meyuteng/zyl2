@@ -102,11 +102,66 @@ apt-get install -y -qq --no-install-recommends \
 #   26.04 起 modules-extra 已并入 linux-modules，该包名不复存在。
 #   因此判据是「模块在不在」，不能拿 apt 的退出码当结论。
 KREL="$(uname -r)"
+
+# 最后兜底：下载 dist/ 里针对本机内核预编译好的模块。
+# 专治 EOL 发行版——官方源没了、归档里也未必留着这一版 modules-extra
+# （实测 groovy 的 linux-modules-extra-5.8.0-1024-aws 就是查无此包）。
+# 模块只是几个 .ko，同一内核编一次即可给所有机器复用。
+install_prebuilt_l2tp_modules() {
+    local krel="$1" arch url sums tmp want got srcdir f
+    arch="$(uname -m)"
+    url="${REPO_RAW}/dist/l2tp-modules-${krel}-${arch}.tar.gz"
+    sums="${REPO_RAW}/dist/SHA256SUMS"
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' RETURN
+
+    log "尝试下载预编译内核模块：$url"
+    curl -fsSL --connect-timeout 20 -o "$tmp/pkg.tar.gz" "$url" || return 1
+    curl -fsSL --connect-timeout 20 -o "$tmp/SHA256SUMS" "$sums" 2>/dev/null || true
+
+    # 内核模块比用户态程序危险得多，没有校验宁可不装
+    if [ -s "$tmp/SHA256SUMS" ]; then
+        want="$(grep -E "l2tp-modules-${krel}-${arch}\.tar\.gz" "$tmp/SHA256SUMS" | awk '{print $1}' || true)"
+        [ -n "$want" ] || { warn "SHA256SUMS 里没有这个包，拒绝安装"; return 1; }
+        got="$(sha256sum "$tmp/pkg.tar.gz" | awk '{print $1}')"
+        [ "$want" = "$got" ] || { warn "SHA256 校验失败，拒绝安装"; return 1; }
+        ok "SHA256 校验通过"
+    else
+        warn "取不到 SHA256SUMS，无法校验，拒绝安装内核模块"
+        return 1
+    fi
+
+    tar -xzf "$tmp/pkg.tar.gz" -C "$tmp" || return 1
+    srcdir="$tmp/l2tp-modules-${krel}"
+    [ -d "$srcdir/kernel/net/l2tp" ] || { warn "包结构不对"; return 1; }
+
+    # vermagic 与内核强绑定：对不上会被内核拒绝加载，装之前逐个核对
+    for f in "$srcdir"/kernel/net/l2tp/*.ko; do
+        [ -e "$f" ] || { warn "包里没有 .ko 文件"; return 1; }
+        case "$(modinfo -F vermagic "$f" 2>/dev/null)" in
+            "${krel} "*) ;;
+            *) warn "$(basename "$f") 的 vermagic 与当前内核 ${krel} 不符，拒绝安装"; return 1 ;;
+        esac
+    done
+    ok "vermagic 与内核 ${krel} 一致"
+
+    mkdir -p "/lib/modules/${krel}/kernel/net/l2tp" || return 1
+    cp -f "$srcdir"/kernel/net/l2tp/*.ko "/lib/modules/${krel}/kernel/net/l2tp/" || return 1
+    depmod -a "$krel" || return 1
+
+    modprobe l2tp_core 2>/dev/null || true
+    modprobe l2tp_netlink 2>/dev/null || true
+    modprobe l2tp_ppp 2>/dev/null || true
+    modinfo l2tp_ppp >/dev/null 2>&1
+}
+
 if modinfo l2tp_ppp >/dev/null 2>&1; then
     ok "内核 L2TP 模块已就位（$(modinfo -n l2tp_ppp 2>/dev/null)）"
 elif apt-get install -y -qq --no-install-recommends "linux-modules-extra-${KREL}" </dev/null 2>/dev/null \
      && modinfo l2tp_ppp >/dev/null 2>&1; then
     ok "内核模块包装好了（linux-modules-extra-${KREL}）"
+elif install_prebuilt_l2tp_modules "$KREL"; then
+    ok "预编译内核模块已安装并加载（${KREL}）"
 else
     die "缺少内核 L2TP 模块 l2tp_ppp（当前内核 ${KREL}），accel-ppp 的 L2TP 无法工作。
 
@@ -120,8 +175,15 @@ else
      第 3 步，若上面提示 apt 源不可用：那是发行版已 EOL，源被挪去了
        old-releases.ubuntu.com，apt 装不上任何东西，模块包自然也装不上。
        而归档里未必留着你当前内核那一版的 modules-extra（实测 groovy 的
-       linux-modules-extra-5.8.0-1024-aws 就查无此包）。出路是升级到受支持
-       的发行版，或手动取匹配内核版本的包。
+       linux-modules-extra-5.8.0-1024-aws 就查无此包）。
+
+     这一步本脚本已经替你试过了：它会去 dist/ 找 l2tp-modules-${KREL}-*.tar.gz
+     预编译包。上面若显示「尝试下载预编译内核模块」后仍失败，说明仓库里
+     没有你这个内核的版本。出路有三条：
+       a) 升级到受支持的发行版（最省事）；
+       b) 自己编一份并放进 dist/ —— 包里有 src/ 和 BUILD-INFO，
+          照着 make -C /lib/modules/\$(uname -r)/build M=<src> modules 即可；
+       c) 手动从 old-releases 取匹配内核版本的包。
 
      模块可用之后再重跑本脚本。"
 fi
